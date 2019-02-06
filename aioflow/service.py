@@ -13,6 +13,7 @@ class AioFlowBadStatus(RuntimeError):
 def service_payload(func):
     async def wrapper(self: "Service", **kwargs):
         self.status = ServiceStatus.PROCESSING
+        self.number = kwargs.pop("__service_number")
         try:
             result = await func(self, **kwargs)
         except Exception:
@@ -42,6 +43,7 @@ class Service:
                  timeout: int = None):
         self.pipeline = pipeline
         self.pipeline.register_service(self, result_of=result_of)
+        self.number = None
 
         self.allow_failure = allow_failure
         self.timeout = timeout
@@ -53,6 +55,11 @@ class Service:
     async def message(self, *args, **kwargs):
         kwargs.update({"__service_name": self.name})
         await self.pipeline.message(*args, **kwargs)
+
+    @property
+    def config(self):
+        lower_name = self.name.lower()
+        return self.pipeline.config.get(lower_name, {})
 
     @property
     def name(self) -> str:

@@ -1,5 +1,7 @@
 import asyncio
+from itertools import count
 from typing import Dict, Callable, List, Iterator
+from uuid import uuid4
 
 from aioflow.helpers import try_call
 from aioflow.service import Service
@@ -31,10 +33,15 @@ class Pipeline:
         """
         self.name = name
         self.config = config
+        self._uuid = str(uuid4())
         self._callback = callback
         self._on_message = on_message
         self._services = {}
         self._results_of = {}
+
+    @property
+    def id(self):
+        return self._uuid
 
     @property
     def config(self) -> Dict:
@@ -107,6 +114,10 @@ class Pipeline:
                     result_of[_service] = [result_of[_service]]
         self._results_of[service.id] = result_of or {}
 
+    @property
+    def services(self):
+        return self._services.values()
+
     def ready_services(self) -> Iterator[List]:
         """
         Generator for getting services for running
@@ -118,6 +129,7 @@ class Pipeline:
         for service_id in self._results_of:
             dependencies[service_id] = {service.id for service in self._results_of[service_id]}
 
+        service_number = count(start=1)
         already_done = set()
         while True:
             scheduled = set()
@@ -126,7 +138,7 @@ class Pipeline:
                 if service_id not in already_done and dependencies[service_id] <= already_done:
                     scheduled.add(service_id)
 
-                    kwargs = self.build_service_kwargs(service_id)
+                    kwargs = self.build_service_kwargs(service_id, next(service_number))
                     service = self._services[service_id]
                     scheduled_tasks.append(service(**kwargs))
 
@@ -136,8 +148,8 @@ class Pipeline:
             yield scheduled_tasks
             already_done |= scheduled
 
-    def build_service_kwargs(self, service_id: str) -> dict:
-        kwargs = {}
+    def build_service_kwargs(self, service_id: str, service_number: int) -> dict:
+        kwargs = {"__service_number": service_number}
         for service in self._results_of[service_id]:
             keys = self._results_of[service_id][service]
             for key in keys:
