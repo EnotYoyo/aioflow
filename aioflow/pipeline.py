@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from itertools import count
 from typing import Dict, Callable, List, Iterator
 from uuid import uuid4
@@ -7,6 +8,8 @@ from aioflow.helpers import try_call
 from aioflow.service import Service
 
 __author__ = 'a.lemets'
+
+logger = logging.getLogger(__name__)
 
 
 class AioFlowRuntimeError(RuntimeError):
@@ -102,6 +105,8 @@ class Pipeline:
 
         :return: None
         """
+        logger.debug(f"Try register {service.name}")
+
         if service.id in self._services:
             raise AioFlowRuntimeError(f"Service {service.name} already register")
 
@@ -112,6 +117,7 @@ class Pipeline:
             for _service in result_of:
                 if isinstance(result_of[_service], str):
                     result_of[_service] = [result_of[_service]]
+        logger.debug(f"Service {service.name} needs result {result_of}")
         self._results_of[service.id] = result_of or {}
 
     @property
@@ -149,6 +155,7 @@ class Pipeline:
             already_done |= scheduled
 
     def build_service_kwargs(self, service_id: str, service_number: int) -> dict:
+        logger.debug("Build service kwargs")
         kwargs = {"__service_number": service_number}
         for service in self._results_of[service_id]:
             keys = self._results_of[service_id][service]
@@ -159,6 +166,7 @@ class Pipeline:
                     for k in key.split("."):
                         res = res[k]
                 except KeyError:
+                    logger.error(f"Key {key} not found in {service.name}")
                     raise AioFlowKeyError(f"{key} not found in result of {service.name}")
                 kwargs[f"{service.name}.{key}"] = res
 

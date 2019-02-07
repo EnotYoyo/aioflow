@@ -1,9 +1,13 @@
 import abc
+import asyncio
+import logging
 from enum import Enum, auto
 from typing import Dict
 from functools import update_wrapper
 
 __author__ = "a.lemets"
+
+logger = logging.getLogger(__name__)
 
 
 class AioFlowBadStatus(RuntimeError):
@@ -12,15 +16,19 @@ class AioFlowBadStatus(RuntimeError):
 
 def service_payload(func):
     async def wrapper(self: "Service", **kwargs):
+        logger.debug(f"Start [{self.name}] payload with {kwargs}")
+
         self.status = ServiceStatus.PROCESSING
         self.number = kwargs.pop("__service_number")
         try:
             result = await func(self, **kwargs)
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Failed [{self.name}]")
             self.status = ServiceStatus.FAILED
             if not self.allow_failure:
                 raise
         else:
+            logger.debug(f"Success [{self.name}] with {result}")
             self.result = result
             return result
 
@@ -51,8 +59,10 @@ class Service:
         # service instance
         self.status = ServiceStatus.PENDING
         self._result = None
+        self._loop = asyncio.get_event_loop()
 
     async def message(self, *args, **kwargs):
+        logger.debug(f"Send message [{self.name}]")
         kwargs.update({"__service_name": self.name})
         await self.pipeline.message(*args, **kwargs)
 
@@ -77,13 +87,19 @@ class Service:
         return self.status is ServiceStatus.DONE or self.status is ServiceStatus.FAILED
 
     @property
+    def loop(self):
+        return self._loop
+
+    @property
     def result(self):
         if not self.is_finished:
-            raise AioFlowBadStatus("Service Instance is not done")
+            logger.debug(f"Service [{self.name}] is {self.status}")
+            raise AioFlowBadStatus("Service instance is not done")
         return self._result
 
     @result.setter
     def result(self, value):
+        logger.debug(f"Set service [{self.name}] result {value}")
         self.status = ServiceStatus.DONE
         self._result = value
 
