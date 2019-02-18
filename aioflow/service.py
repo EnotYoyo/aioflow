@@ -13,7 +13,7 @@ class AioFlowBadStatus(RuntimeError):
 def service_payload(func):
     async def wrapper(self: "Service", **kwargs):
         self.status = ServiceStatus.PROCESSING
-        self.number = kwargs.pop("__service_number")
+        self.number = kwargs.pop("__service_number", None)
         try:
             result = await func(self, **kwargs)
         except Exception:
