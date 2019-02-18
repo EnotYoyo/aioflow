@@ -1,5 +1,6 @@
 # Aioflow
 [![Build Status](https://travis-ci.org/EnotYoyo/aioflow.svg?branch=master)](https://travis-ci.org/EnotYoyo/aioflow)
+[![codecov](https://codecov.io/gh/EnotYoyo/aioflow/branch/master/graph/badge.svg)](https://codecov.io/gh/EnotYoyo/aioflow)
 
 A very simple library for creating python stream processing with asyncio.
 
