@@ -19,7 +19,7 @@ def service_payload(func):
         logger.debug(f"Start [{self.name}] payload with {kwargs}")
 
         self.status = ServiceStatus.PROCESSING
-        self.number = kwargs.pop("__service_number")
+        self.number = kwargs.pop("__service_number", None)
         try:
             result = await func(self, **kwargs)
         except Exception as e:
