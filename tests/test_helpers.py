@@ -1,6 +1,7 @@
 import asyncio
+from unittest import mock
 
-from aioflow.helpers import try_call
+from aioflow.helpers import try_call, load_config
 
 __author__ = "a.lemets"
 
@@ -28,3 +29,15 @@ def test_try_call_async_function():
 
     result = asyncio.run(try_call(async_func, 42, var2="yoyo"))
     assert result == "enot"
+
+
+def test_load_yaml_file():
+    yaml = """
+    celeryservice:
+        timeout: 42
+    """
+    m = mock.mock_open(read_data=yaml)
+    with mock.patch("aioflow.helpers.open", m):
+        config = load_config("fake_path")
+
+    assert config["celeryservice"]["timeout"] == 42

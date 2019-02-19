@@ -4,7 +4,7 @@ from itertools import count
 from typing import Dict, Callable, List, Iterator
 from uuid import uuid4
 
-from aioflow.helpers import try_call
+from aioflow.helpers import try_call, load_config
 from aioflow.service import Service
 
 __author__ = 'a.lemets'
@@ -61,8 +61,8 @@ class Pipeline:
             self._config = {}
         elif isinstance(value, Dict):
             self._config = dict(value)
-        # elif isinstance(value, str):
-        #     self._config = load_config(value)
+        elif isinstance(value, str):
+            self._config = load_config(value)
         else:
             raise AioFlowRuntimeError("Bad value for config")
 
