@@ -68,19 +68,18 @@ class Service:
 
     @property
     def config(self):
-        lower_name = self.name.lower()
-        return self.pipeline.config.get(lower_name, {})
+        return self.pipeline.config.get(self.name, {})
 
     @property
     def name(self) -> str:
-        return type(self).__name__
+        return type(self).__name__.lower()
 
     def __repr__(self):
         return self.name
 
     @property
     def id(self) -> str:
-        return f"{self.name}__{id(self)}"
+        return f"{type(self).__name__}__{id(self)}"
 
     @property
     def is_finished(self) -> bool:

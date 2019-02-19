@@ -144,8 +144,8 @@ class Pipeline:
                 if service_id not in already_done and dependencies[service_id] <= already_done:
                     scheduled.add(service_id)
 
-                    kwargs = self.build_service_kwargs(service_id, next(service_number))
                     service = self._services[service_id]
+                    kwargs = self.build_service_kwargs(service, next(service_number))
                     scheduled_tasks.append(service(**kwargs))
 
             if not scheduled_tasks:
@@ -154,21 +154,23 @@ class Pipeline:
             yield scheduled_tasks
             already_done |= scheduled
 
-    def build_service_kwargs(self, service_id: str, service_number: int) -> dict:
+    def build_service_kwargs(self, service: Service, service_number: int) -> dict:
         logger.debug("Build service kwargs")
         kwargs = {"__service_number": service_number}
-        for service in self._results_of[service_id]:
-            keys = self._results_of[service_id][service]
+        kwargs.update(service.config.get("__kwargs", {}))
+
+        for srv in self._results_of[service.id]:
+            keys = self._results_of[service.id][srv]
             for key in keys:
-                res = service.result
+                res = srv.result
 
                 try:
                     for k in key.split("."):
                         res = res[k]
                 except KeyError:
-                    logger.error(f"Key {key} not found in {service.name}")
-                    raise AioFlowKeyError(f"{key} not found in result of {service.name}")
-                kwargs[f"{service.name}.{key}"] = res
+                    logger.error(f"Key {key} not found in {srv.name}")
+                    raise AioFlowKeyError(f"{key} not found in result of {srv.name}")
+                kwargs[f"{srv.name}.{key}"] = res
 
         return kwargs
 
