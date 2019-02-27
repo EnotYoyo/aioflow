@@ -3,7 +3,8 @@ import asyncio
 import logging
 from enum import Enum, auto
 from typing import Dict
-from functools import update_wrapper
+
+from aioflow.helpers import cached_property
 
 __author__ = "a.lemets"
 
@@ -14,27 +15,6 @@ class AioFlowBadStatus(RuntimeError):
     """Service not finished"""
 
 
-def service_payload(func):
-    async def wrapper(self: "Service", **kwargs):
-        logger.debug(f"Start [{self.name}] payload with {kwargs}")
-
-        self.status = ServiceStatus.PROCESSING
-        self.number = kwargs.pop("__service_number", None)
-        try:
-            result = await func(self, **kwargs)
-        except Exception as e:
-            logger.exception(f"Failed [{self.name}]")
-            self.status = ServiceStatus.FAILED
-            if not self.allow_failure:
-                raise
-        else:
-            logger.debug(f"Success [{self.name}] with {result}")
-            self.result = result
-            return result
-
-    return update_wrapper(wrapper, func)
-
-
 class ServiceStatus(Enum):
     PENDING = auto()
     PROCESSING = auto()
@@ -43,18 +23,12 @@ class ServiceStatus(Enum):
 
 
 class Service:
-    def __init__(self,
-                 pipeline: "Pipeline",
-                 *,
-                 result_of: Dict = None,
-                 allow_failure: bool = False,
-                 timeout: int = None):
+    def __init__(self, pipeline: "Pipeline"):
         self.pipeline = pipeline
-        self.pipeline.register_service(self, result_of=result_of)
         self.number = None
 
-        self.allow_failure = allow_failure
-        self.timeout = timeout
+        self.allow_failure = self.config.get("allow_failure", False)
+        self.timeout = self.config.get("timeout", None)
 
         # service instance
         self.status = ServiceStatus.PENDING
@@ -66,9 +40,12 @@ class Service:
         kwargs.update({"__service_name": self.name})
         await self.pipeline.message(*args, **kwargs)
 
-    @property
+    @cached_property
     def config(self):
-        return self.pipeline.config.get(self.name, {})
+        _config = {}
+        _config.update(self.pipeline.config.get("__global", {}))
+        _config.update(self.pipeline.config.get(self.name, {}))
+        return _config
 
     @property
     def name(self) -> str:
@@ -106,6 +83,27 @@ class Service:
     async def payload(self, **kwargs) -> Dict or None:
         ...
 
-    @service_payload
     async def __call__(self, **kwargs) -> Dict or None:
         return await self.payload(**kwargs)
+
+
+def service_deco(_payload=None, *, bind=False, payload_name="payload", base_service_cls=Service):
+    def decorator(func):
+        payload = func
+        if not bind:
+            payload = staticmethod(func)
+
+        attrs = {
+            payload_name: payload,
+            '__doc__': func.__doc__,
+            '__module__': func.__module__,
+            '__wrapped__': func
+        }
+        cls = type(func.__name__, (base_service_cls,), attrs)
+
+        return cls
+
+    if _payload:
+        return decorator(_payload)
+
+    return decorator

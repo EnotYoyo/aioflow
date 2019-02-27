@@ -1,13 +1,17 @@
 import asyncio
 from unittest import mock
 
-from aioflow.helpers import try_call, load_config
+import pytest
+import yaml
+
+from aioflow.helpers import try_call, load_config, merge_dict
 
 __author__ = "a.lemets"
 
 
 def test_try_call_not_callable():
-    result = asyncio.run(try_call([], *[], **{}))
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(try_call([], *[], **{}))
     assert result is None
 
 
@@ -17,7 +21,8 @@ def test_try_call_sync_function():
         assert var2 == "yoyo"
         return "enot"
 
-    result = asyncio.run(try_call(sync_func, 42, var2="yoyo"))
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(try_call(sync_func, 42, var2="yoyo"))
     assert result == "enot"
 
 
@@ -27,7 +32,8 @@ def test_try_call_async_function():
         assert var2 == "yoyo"
         return "enot"
 
-    result = asyncio.run(try_call(async_func, 42, var2="yoyo"))
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(try_call(async_func, 42, var2="yoyo"))
     assert result == "enot"
 
 
@@ -41,3 +47,38 @@ def test_load_yaml_file():
         config = load_config("fake_path")
 
     assert config["celeryservice"]["timeout"] == 42
+
+
+def test_load_bad_yaml_file():
+    bad_yaml = """{"celeryservice" = {"timeout" = 42}}"""
+    m = mock.mock_open(read_data=bad_yaml)
+    with mock.patch("aioflow.helpers.open", m):
+        with pytest.raises(yaml.YAMLError):
+            load_config("fake_path")
+
+
+def test_merge_dict():
+    dct1 = {"a": 1, "b": 2}
+    dct2 = {"c": 3, "d": 4}
+    merge_dict(dct1, dct2)
+
+    assert dct1 == {"a": 1, "b": 2, "c": 3, "d": 4}
+    assert dct2 == {"c": 3, "d": 4}
+
+
+def test_merge_dict_with_conflict():
+    dct1 = {"a": {"b": 1}, "c": {"d": 2}}
+    dct2 = {"c": 3, "d": 4}
+    merge_dict(dct1, dct2)
+
+    assert dct1 == {"a": {"b": 1}, "c": 3, "d": 4}
+    assert dct2 == {"c": 3, "d": 4}
+
+
+def test_merge_dict_recursive():
+    dct1 = {"a": {"b": 1}, "c": {"d": 2}}
+    dct2 = {"a": {"c": 3}, "c": {"d": 4}}
+    merge_dict(dct1, dct2)
+
+    assert dct1 == {"a": {"b": 1, "c": 3}, "c": {"d": 4}}
+    assert dct2 == {"a": {"c": 3}, "c": {"d": 4}}

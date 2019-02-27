@@ -7,6 +7,6 @@ class PercentMixin:
         return getattr(self, "_percent", 0)
 
     @percent.setter
-    def percent(self, value):
+    def percent(self, value: int):
         if value:
             setattr(self, "_percent", int(value))
