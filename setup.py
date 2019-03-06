@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 
 __pckg__ = 'aioflow'
 __dpckg__ = __pckg__.replace('-', '_')
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 
 def load_requirements():
