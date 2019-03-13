@@ -3,6 +3,9 @@
 [![codecov](https://codecov.io/gh/EnotYoyo/aioflow/branch/master/graph/badge.svg)](https://codecov.io/gh/EnotYoyo/aioflow)
 
 A very simple library for creating python stream processing with asyncio.
+```bash
+pip install aioflow
+```
 
 ```python
 import asyncio
