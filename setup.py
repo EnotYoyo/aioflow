@@ -1,24 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import os
 from setuptools import setup, find_packages
 
-__pckg__ = 'aioflow'
-__dpckg__ = __pckg__.replace('-', '_')
-__version__ = "0.0.3"
+__pckg__ = "aioflow"
+__dpckg__ = __pckg__.replace("-", "_")
+__version__ = "0.0.9"
 
-
-def load_requirements():
-    with open(os.path.join(os.getcwd(), "requirements.txt")) as requirements:
-        return requirements.read().splitlines()
-
-
-setup(name=__pckg__,
-      version=__version__,
-      description='A simple workflow implementation using asyncio.',
-      author='Andrey Lemets',
-      author_email='a.a.lemets@gmail.com',
-      packages=find_packages(),
-      include_package_data=True,
-      install_requires=load_requirements(),
-      license='MIT License')
+setup(
+    name=__pckg__,
+    version=__version__,
+    description="A simple workflow implementation using asyncio.",
+    author="Andrey Lemets",
+    author_email="a.a.lemets@gmail.com",
+    packages=find_packages(),
+    include_package_data=True,
+    license="MIT License",
+    install_requires=[
+        "pyyaml==3.13",
+    ],
+    tests_require=[
+        "pytest==4.2.0",
+        "pytest-cov==2.6.1",
+        "pytest-asyncio==0.10.0",
+    ],
+    extras_require={
+        "aioredis": [
+            "aioredis==1.2.0",
+        ],
+    }
+)

@@ -7,10 +7,11 @@ A very simple library for creating python stream processing with asyncio.
 pip install aioflow
 ```
 
+
 ```python
 import asyncio
 
-from aioflow import Pipeline, Service
+from aioflow import Pipeline, Service, Middleware
 
 
 class GetSha1(Service):
@@ -41,13 +42,14 @@ class PrintSha1v2(Service):
 
 
 async def main():
-    def pprint(**kwargs):
-        print(kwargs)
+    class MessageMiddleware(Middleware):
+        async def service_message(self, service, **kwargs):
+            print(kwargs)
 
-    sha1_pipeline = Pipeline("sha1", on_message=pprint)
-    sha1_pipeline.register(GetSha1)
-    sha1_pipeline.register(PrintSha1, depends_on={GetSha1: "arc_sha1"})
-    sha1_pipeline.register(PrintSha1v2, depends_on={GetSha1: "arc_sha1"})
+    sha1_pipeline = await Pipeline.create("sha1", middleware=MessageMiddleware())
+    await sha1_pipeline.register(GetSha1)
+    await sha1_pipeline.register(PrintSha1, depends_on={GetSha1: "arc_sha1"})
+    await sha1_pipeline.register(PrintSha1v2, depends_on={GetSha1: "arc_sha1"})
     await sha1_pipeline.run()
 
 
@@ -73,7 +75,7 @@ Results:
 ```python
 import asyncio
 
-from aioflow import service_deco, Pipeline
+from aioflow import service_deco, Pipeline, Middleware
 
 
 @service_deco(bind=True)
@@ -104,13 +106,14 @@ async def print_sha1v2(self, **kwargs):
 
 
 async def main():
-    def pprint(**kwargs):
-        print(kwargs)
+    class MessageMiddleware(Middleware):
+        async def service_message(self, service, **kwargs):
+            print(kwargs)
 
-    sha1_pipeline = Pipeline("sha1", on_message=pprint)
-    sha1_pipeline.register(get_sha1)
-    sha1_pipeline.register(print_sha1, depends_on={get_sha1: "arc_sha1"})
-    sha1_pipeline.register(print_sha1v2, depends_on={get_sha1: "arc_sha1"})
+    sha1_pipeline = await Pipeline.create("sha1", middleware=MessageMiddleware())
+    await sha1_pipeline.register(get_sha1)
+    await sha1_pipeline.register(print_sha1, depends_on={get_sha1: "arc_sha1"})
+    await sha1_pipeline.register(print_sha1v2, depends_on={get_sha1: "arc_sha1"})
     await sha1_pipeline.run()
 
 

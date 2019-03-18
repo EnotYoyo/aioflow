@@ -1,10 +1,15 @@
 import abc
 import asyncio
 import logging
-from enum import Enum, auto
+from enum import Enum
 from typing import Dict
 
 from aioflow.helpers import cached_property
+
+try:
+    import ujson as json
+except ImportError:
+    import json
 
 __author__ = "a.lemets"
 
@@ -16,15 +21,16 @@ class AioFlowBadStatus(RuntimeError):
 
 
 class ServiceStatus(Enum):
-    PENDING = auto()
-    PROCESSING = auto()
-    DONE = auto()
-    FAILED = auto()
+    PENDING = "pending"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
 
 
 class Service:
     def __init__(self, pipeline: "Pipeline"):
-        self.pipeline = pipeline
+        self._id = None
+        self._pipeline = pipeline
         self.number = None
 
         self.allow_failure = self.config.get("allow_failure", False)
@@ -37,14 +43,13 @@ class Service:
 
     async def message(self, *args, **kwargs):
         logger.debug(f"Send message [{self.name}]")
-        kwargs.update({"__service_name": self.name})
-        await self.pipeline.message(*args, **kwargs)
+        return await self._pipeline._call_middleware("service_message", self, **kwargs)
 
     @cached_property
     def config(self):
         _config = {}
-        _config.update(self.pipeline.config.get("__global", {}))
-        _config.update(self.pipeline.config.get(self.name, {}))
+        _config.update(self._pipeline.config.get("__global", {}))
+        _config.update(self._pipeline.config.get(self.name, {}))
         return _config
 
     @property
@@ -56,7 +61,7 @@ class Service:
 
     @property
     def id(self) -> str:
-        return f"{type(self).__name__}__{id(self)}"
+        return self._id or f"{type(self).__name__}__{id(self)}"
 
     @property
     def is_finished(self) -> bool:
@@ -78,6 +83,10 @@ class Service:
         logger.debug(f"Set service [{self.name}] result {value}")
         self.status = ServiceStatus.DONE
         self._result = value
+
+    @property
+    def json_result(self):
+        return json.dumps(self.result)
 
     @abc.abstractmethod
     async def payload(self, **kwargs) -> Dict or None:

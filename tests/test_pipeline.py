@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 
 from aioflow import Service, ServiceStatus
+from aioflow.middlewareabc import MiddlewareABC
 from aioflow.pipeline import Pipeline, AioFlowRuntimeError, AioFlowKeyError
 
 __author__ = "a.lemets"
@@ -31,9 +32,6 @@ def test_pipeline_create():
     assert pipeline.name == "test_name"
     assert pipeline.config == {"this": "is", "awesome": "config"}
     assert str(UUID(pipeline.id)) == pipeline.id
-    assert pipeline._pre_callback is None
-    assert pipeline._post_callback is None
-    assert pipeline._on_message is None
 
 
 @pytest.mark.asyncio
@@ -62,9 +60,9 @@ async def test_register_service_with_depends_on():
 @pytest.mark.asyncio
 async def test_register_service_with_bad_depends_on():
     pipeline = Pipeline("test_name")
-    pipeline.register(ServiceForTests)
+    await pipeline.register(ServiceForTests)
     with pytest.raises(AioFlowRuntimeError):
-        pipeline.register(ServiceForTests, depends_on={"ServiceForTests": "sha1"})
+        await pipeline.register(ServiceForTests, depends_on={"ServiceForTests": "sha1"})
 
 
 def test_pipeline_dict_config():
@@ -106,7 +104,7 @@ async def test_pipeline_build_service_kwargs_without_dependence():
         }
     }
     pipeline = Pipeline("test", config=config)
-    pipeline.register(ServiceForTests)
+    await pipeline.register(ServiceForTests)
     kwargs = pipeline.build_service_kwargs(list(pipeline.services)[0], 1)
     assert kwargs == {"a": 23, "b": 42, "__service_number": 1}
 
@@ -230,61 +228,39 @@ async def test_pipeline_build_services_dependence():
 
     class Service1(Service):
         async def payload(self, **kwargs):
+            self.__class__.callable = True
             return {"a": 23}
 
     class Service2(Service):
         async def payload(self, **kwargs):
+            self.__class__.callable = True
             assert kwargs["service1.a"] == 23
             return {"b": 42}
 
     class Service3(Service):
         async def payload(self, **kwargs):
+            self.__class__.callable = True
             assert kwargs["service1.a"] == 23
             return {"c": 11}
 
     class Service4(Service):
         async def payload(self, **kwargs):
+            self.__class__.callable = True
             assert kwargs["service1.a"] == 23
             assert kwargs["service2.b"] == 42
             assert kwargs["service3.c"] == 11
 
     pipeline = Pipeline("test", config=config)
-    pipeline.register(Service1)
-    pipeline.register(Service2, depends_on={Service1: "a"})
-    pipeline.register(Service3, depends_on={Service1: "a"})
-    pipeline.register(Service4, depends_on={Service1: "a", Service2: "b", Service3: "c"})
+    await pipeline.register(Service1)
+    await pipeline.register(Service2, depends_on={Service1: "a"})
+    await pipeline.register(Service3, depends_on={Service1: "a"})
+    await pipeline.register(Service4, depends_on={Service1: "a", Service2: "b", Service3: "c"})
 
     await pipeline.run()
-
-
-@pytest.mark.asyncio
-async def test_pipeline_pre_and_post_callbacks():
-    config = {
-        "__pre_callback_kwargs": {
-            "a": 4,
-            "b": 8
-        },
-        "__post_callback_kwargs": {
-            "c": 23,
-            "d": 42
-        }
-    }
-
-    async def pre_call(a, b):
-        assert a == 4
-        assert b == 8
-        pre_call.is_call = True
-
-    async def post_call(c, d):
-        assert c == 23
-        assert d == 42
-        post_call.is_call = True
-
-    pipeline = Pipeline("test", config=config, pre_callback=pre_call, post_callback=post_call)
-    await pipeline.run()
-
-    assert pre_call.is_call
-    assert post_call.is_call
+    assert Service1.callable
+    assert Service2.callable
+    assert Service3.callable
+    assert Service4.callable
 
 
 @pytest.mark.asyncio
@@ -297,7 +273,122 @@ async def test_pipeline_bad_service_order():
 
     pipeline = Pipeline("test")
     with pytest.raises(AioFlowRuntimeError):
-        pipeline.register(Service2, depends_on={Service1: "a"})
+        await pipeline.register(Service2, depends_on={Service1: "a"})
 
-    pipeline.register(Service1)
-    pipeline.register(Service2, depends_on={Service1: "a"})  # this its ok
+    await pipeline.register(Service1)
+    await pipeline.register(Service2, depends_on={Service1: "a"})  # this its ok
+
+
+@pytest.mark.asyncio
+async def test_pipeline_middleware_create_start_end_message():
+    class TestMiddleware(MiddlewareABC):
+        async def pipeline_create(self, pipeline, **kwargs) -> id:
+            self.__class__._pipeline_create = True
+            assert kwargs == {"a": 4, "b": 8}
+
+        async def pipeline_start(self, pipeline, **kwargs):
+            self.__class__._pipeline_start = True
+            assert kwargs == {"c": 15, "d": 16}
+
+        async def pipeline_message(self, pipeline, **kwargs):
+            self.__class__._pipeline_message = True
+            assert kwargs == {"yo": "yo"}
+
+        async def pipeline_done(self, pipeline, **kwargs):
+            self.__class__._pipeline_done = True
+            assert kwargs == {"e": 23, "f": 42}
+
+    config = {
+        "__pipeline_create_kwargs": {
+            "a": 4,
+            "b": 8
+        },
+        "__pipeline_start_kwargs": {
+            "c": 15,
+            "d": 16
+        },
+        "__pipeline_done_kwargs": {
+            "e": 23,
+            "f": 42
+        }
+    }
+
+    pipeline = await Pipeline.create("test", config=config, middleware=TestMiddleware())
+    await pipeline.run()
+    await pipeline.message(**{"yo": "yo"})
+
+    assert TestMiddleware._pipeline_create
+    assert TestMiddleware._pipeline_start
+    assert TestMiddleware._pipeline_message
+    assert TestMiddleware._pipeline_done
+
+
+@pytest.mark.asyncio
+async def test_pipeline_middleware_failed():
+    class TestMiddleware(MiddlewareABC):
+        async def pipeline_failed(self, pipeline, exception, **kwargs) -> id:
+            self.__class__._pipeline_failed = True
+            assert isinstance(exception, ZeroDivisionError)
+
+    pipeline = await Pipeline.create("test", middleware=TestMiddleware())
+    await pipeline.register(ServiceRaise)
+
+    with pytest.raises(ZeroDivisionError):
+        await pipeline.run()
+
+    assert TestMiddleware._pipeline_failed
+
+
+@pytest.mark.asyncio
+async def test_pipeline_middleware_failed():
+    class TestMiddleware(MiddlewareABC):
+        async def pipeline_failed(self, pipeline, exception, **kwargs) -> id:
+            self.__class__._pipeline_failed = True
+            assert isinstance(exception, ZeroDivisionError)
+
+    pipeline = await Pipeline.create("test", middleware=TestMiddleware())
+    await pipeline.register(ServiceRaise)
+
+    with pytest.raises(ZeroDivisionError):
+        await pipeline.run()
+
+    assert TestMiddleware._pipeline_failed
+
+
+@pytest.mark.asyncio
+async def test_pipeline_middleware_service():
+    class TestMiddleware(MiddlewareABC):
+        async def service_create(self, service, **kwargs):
+            self.__class__._service_create = True
+            assert isinstance(service, MessageService)
+
+        async def service_start(self, service, **kwargs):
+            self.__class__._service_start = True
+            assert isinstance(service, MessageService)
+            assert service.status is ServiceStatus.PROCESSING
+
+        async def service_message(self, service, **kwargs):
+            self.__class__._service_message = True
+            assert kwargs == {"yo": "yo"}
+            assert isinstance(service, MessageService)
+            assert service.status is ServiceStatus.PROCESSING
+
+        async def service_done(self, service, **kwargs):
+            self.__class__._service_done = True
+            assert isinstance(service, MessageService)
+            assert service.status is ServiceStatus.DONE
+
+    class MessageService(ServiceForTests):
+        async def payload(self, **kwargs):
+            await self.message(**{"yo": "yo"})
+            return kwargs
+
+    pipeline = await Pipeline.create("test", middleware=TestMiddleware())
+    await pipeline.register(MessageService)
+
+    assert TestMiddleware._service_create
+
+    await pipeline.run()
+    assert TestMiddleware._service_start
+    assert TestMiddleware._service_message
+    assert TestMiddleware._service_done

@@ -124,16 +124,6 @@ async def test_service_get_loop():
 
 
 @pytest.mark.asyncio
-async def test_service_with_message():
-    expected_kwargs = {"a": 23, "b": 42, "__service_name": "servicefortestswithmessage"}
-    pipeline = PipelineMockWithMessage(expected_message_kwargs=expected_kwargs)
-    service = ServiceForTestsWithMessage(pipeline)
-    res = await service(a=23, b=42)
-
-    assert res == {"a": 23, "b": 42}
-
-
-@pytest.mark.asyncio
 async def test_service_decorator():
     @service_deco
     async def test_payload(**kwargs):

@@ -1,10 +1,12 @@
 import asyncio
 import logging
+from enum import Enum
 from itertools import count
-from typing import Dict, Callable, List, Iterator, Type
+from typing import Dict, List, Iterator, Type
 from uuid import uuid4
 
-from aioflow.helpers import try_call, load_config, merge_dict
+from aioflow.helpers import load_config, merge_dict
+from aioflow.middlewareabc import MiddlewareABC
 from aioflow.service import Service, ServiceStatus
 
 __author__ = 'a.lemets'
@@ -20,34 +22,49 @@ class AioFlowKeyError(KeyError):
     ...
 
 
+class PipelineStatus(Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
+
+
 class Pipeline:
+    @classmethod
+    async def create(cls,
+                     name: str,
+                     *,
+                     config: Dict or str = None,
+                     middleware: List[MiddlewareABC] or MiddlewareABC = None) -> "Pipeline":
+        self = cls(name, config=config, middleware=middleware)
+        await self._call_middleware("pipeline_create", self)
+        return self
+
     def __init__(self,
                  name: str,
                  *,
                  config: Dict or str = None,
-                 pre_callback: Callable = None,
-                 post_callback: Callable = None,
-                 on_message: Callable = None):
+                 middleware: List[MiddlewareABC] or MiddlewareABC = None):
         """
 
         :param name: name of pipeline
         :param config: path or config object
-        :param pre_callback: call, when pipeline is started
-        :param post_callback: call, when pipeline is ended
-        :param on_message: callback for messages (call from service)
+        :param middleware: list of middleware
         """
         self.name = name
         self.config = config
-        self._uuid = str(uuid4())
-        self._pre_callback = pre_callback
-        self._post_callback = post_callback
-        self._on_message = on_message
+        self._id = None
+        if isinstance(middleware, MiddlewareABC):
+            middleware = [middleware]
+        self._middleware = middleware or []
         self._services = {}
         self._depends_on = {}
 
     @property
     def id(self):
-        return self._uuid
+        if not self._id:
+            self._id = str(uuid4())
+        return self._id
 
     @property
     def config(self) -> Dict:
@@ -72,6 +89,11 @@ class Pipeline:
     def update_config(self, dct: Dict):
         merge_dict(self._config, dct)
 
+    async def _call_middleware(self, func, *args, **kwargs):
+        kwargs.update(self.config.get("__{}_kwargs".format(func), {}))
+        for m in self._middleware:
+            await getattr(m, func)(*args, **kwargs)
+
     async def message(self, **kwargs) -> None:
         """
         Try call message callback
@@ -79,31 +101,9 @@ class Pipeline:
         :param kwargs:
         :return:
         """
-        return await try_call(self._on_message, **kwargs)
+        return await self._call_middleware("pipeline_message", self, **kwargs)
 
-    async def pre_callback(self, **kwargs) -> None:
-        """
-        Try call pipeline callback
-
-        :param kwargs:
-        :return:
-        """
-
-        logger.debug("Trying call pre_callback")
-        return await try_call(self._pre_callback, **kwargs)
-
-    async def post_callback(self, **kwargs) -> None:
-        """
-        Try call pipeline callback
-
-        :param kwargs:
-        :return:
-        """
-
-        logger.debug("Trying call post_callback")
-        return await try_call(self._post_callback, **kwargs)
-
-    def register(self, service_cls: Type[Service], *, depends_on: Dict = None):
+    async def register(self, service_cls: Type[Service], *, depends_on: Dict = None):
         """
         Register new service in pipeline
 
@@ -124,6 +124,7 @@ class Pipeline:
         :return: None
         """
         service = service_cls(self)
+        await self._call_middleware("service_create", service)
         self._register_service(service, depends_on)
         return self
 
@@ -178,7 +179,7 @@ class Pipeline:
                 if service_id not in already_done and dependencies[service_id] <= already_done:
                     scheduled.add(service_id)
 
-                    task = self.prepare_service(service_id, next(service_number))
+                    task = self.service_wrapper(service_id, next(service_number))
                     scheduled_tasks.append(task)
 
             if not scheduled_tasks:
@@ -207,7 +208,7 @@ class Pipeline:
 
         return kwargs
 
-    async def prepare_service(self, service_id: int, service_number):
+    async def service_wrapper(self, service_id: int, service_number):
         service = self._services[service_id]
         kwargs = self.build_service_kwargs(service, service_number)
 
@@ -215,25 +216,35 @@ class Pipeline:
 
         service.status = ServiceStatus.PROCESSING
         service.number = kwargs.pop("__service_number", None)
+        await self._call_middleware("service_start", service)
         try:
             result = await asyncio.wait_for(service(**kwargs), timeout=service.timeout)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exp:
             logger.error(f"Timeout [{service.name}]")
             service.status = ServiceStatus.FAILED
+            await self._call_middleware("service_failed", service, exp)
             if not service.allow_failure:
                 raise
-        except Exception:
+        except Exception as exp:
             logger.exception(f"Failed [{service.name}]")
             service.status = ServiceStatus.FAILED
+            await self._call_middleware("service_failed", service, exp)
             if not service.allow_failure:
                 raise
         else:
             logger.debug(f"Success [{service.name}] with {result}")
             service.result = result
+            await self._call_middleware("service_done", service)
             return result
 
     async def run(self):
-        await self.pre_callback(**self.config.get("__pre_callback_kwargs", {}))
+        await self._call_middleware("pipeline_start", self)
+
         for services in self.ready_services():
-            await asyncio.gather(*services, )
-        await self.post_callback(**self.config.get("__post_callback_kwargs", {}))
+            try:
+                await asyncio.gather(*services, )
+            except Exception as exp:
+                await self._call_middleware("pipeline_failed", self, exp)
+                raise
+
+        await self._call_middleware("pipeline_done", self)
