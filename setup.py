@@ -18,12 +18,12 @@ setup(
     install_requires=[
         "pyyaml==3.13",
     ],
-    tests_require=[
-        "pytest==4.2.0",
-        "pytest-cov==2.6.1",
-        "pytest-asyncio==0.10.0",
-    ],
     extras_require={
+        "tests": [
+            "pytest==4.2.0",
+            "pytest-cov==2.6.1",
+            "pytest-asyncio==0.10.0",
+        ],
         "aioredis": [
             "aioredis==1.2.0",
         ],
