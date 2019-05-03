@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from aioredis import Redis
 
+import aioflow
 from aioflow import MiddlewareABC, ServiceStatus
 from aioflow.pipeline import PipelineStatus
 
@@ -31,7 +32,7 @@ class RedisMiddleware(MiddlewareABC):
     async def _service_id(self):
         return await self.gen_id(self._service_key)
 
-    async def pipeline_create(self, pipeline, **kwargs):
+    async def pipeline_create(self, pipeline: "aioflow.Pipeline", **kwargs):
         pipeline._id = await self._pipeline_id()
         await self.redis.hmset_dict(
             self._pipeline_key(pipeline.id),
@@ -42,7 +43,7 @@ class RedisMiddleware(MiddlewareABC):
             )
         )
 
-    async def pipeline_start(self, pipeline, **kwargs):
+    async def pipeline_start(self, pipeline: "aioflow.Pipeline", **kwargs):
         await self.redis.hmset_dict(
             self._pipeline_key(pipeline.id),
             dict(
@@ -51,10 +52,7 @@ class RedisMiddleware(MiddlewareABC):
             )
         )
 
-    async def pipeline_message(self, pipeline, **kwargs):
-        ...
-
-    async def pipeline_done(self, pipeline, **kwargs):
+    async def pipeline_done(self, pipeline: "aioflow.Pipeline", **kwargs):
         await self.redis.hmset_dict(
             self._pipeline_key(pipeline.id),
             dict(
@@ -63,7 +61,7 @@ class RedisMiddleware(MiddlewareABC):
             )
         )
 
-    async def pipeline_failed(self, pipeline, exception, **kwargs):
+    async def pipeline_failed(self, pipeline: "aioflow.Pipeline", exception: Exception, **kwargs):
         await self.redis.hmset_dict(
             self._pipeline_key(pipeline.id),
             dict(
@@ -72,7 +70,7 @@ class RedisMiddleware(MiddlewareABC):
             )
         )
 
-    async def service_create(self, service, **kwargs):
+    async def service_create(self, service: "aioflow.Service", **kwargs):
         service._id = await self._service_id()
         await self.redis.hmset_dict(
             self._service_key(service.id),
@@ -80,10 +78,11 @@ class RedisMiddleware(MiddlewareABC):
                 name=service.name,
                 created=datetime.datetime.utcnow().timestamp(),
                 status=ServiceStatus.PENDING.value,
+                pipeline_id=service._pipeline.id
             )
         )
 
-    async def service_start(self, service, **kwargs):
+    async def service_start(self, service: "aioflow.Service", **kwargs):
         await self.redis.hmset_dict(
             self._service_key(service.id),
             dict(
@@ -92,10 +91,10 @@ class RedisMiddleware(MiddlewareABC):
             )
         )
 
-    async def service_message(self, service, **kwargs):
+    async def service_message(self, service: "aioflow.Service", **kwargs):
         ...
 
-    async def service_done(self, service, **kwargs):
+    async def service_done(self, service: "aioflow.Service", **kwargs):
         await self.redis.hmset_dict(
             self._service_key(service.id),
             dict(
@@ -105,7 +104,7 @@ class RedisMiddleware(MiddlewareABC):
             )
         )
 
-    async def service_failed(self, service, exception, **kwargs):
+    async def service_failed(self, service: "aioflow.Service", exception: Exception, **kwargs):
         await self.redis.hmset_dict(
             self._service_key(service.id),
             dict(

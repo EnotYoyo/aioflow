@@ -3,7 +3,7 @@ __author__ = "a.lemets"
 
 class PercentMixin:
     @property
-    def percent(self):
+    def percent(self) -> int:
         return getattr(self, "_percent", 0)
 
     @percent.setter

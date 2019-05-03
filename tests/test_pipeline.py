@@ -392,3 +392,25 @@ async def test_pipeline_middleware_service():
     assert TestMiddleware._service_start
     assert TestMiddleware._service_message
     assert TestMiddleware._service_done
+
+
+@pytest.mark.asyncio
+async def test_pipeline_middleware_specific_service():
+    class MessageService(ServiceForTests):
+        async def payload(self, **kwargs):
+            await self.message(**{"yo": "yo"})
+            return kwargs
+
+    class TestMiddleware(MiddlewareABC):
+        hooks = (MessageService,)
+        _service_create = 0
+
+        async def service_create(self, service, **kwargs):
+            self.__class__._service_create += 1
+            assert isinstance(service, MessageService)
+
+    pipeline = await Pipeline.create("test", middleware=TestMiddleware())
+    assert TestMiddleware._service_create == 0
+    await pipeline.register(MessageService)
+    await pipeline.register(ServiceForTests)
+    assert TestMiddleware._service_create == 1

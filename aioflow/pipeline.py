@@ -2,7 +2,7 @@ import asyncio
 import logging
 from enum import Enum
 from itertools import count
-from typing import Dict, List, Iterator, Type
+from typing import Any, Dict, Iterable, Iterator, List, Type
 from uuid import uuid4
 
 from aioflow.helpers import load_config, merge_dict
@@ -61,8 +61,8 @@ class Pipeline:
         self._depends_on = {}
 
     @property
-    def id(self):
-        if not self._id:
+    def id(self) -> str or int:
+        if self._id is None:
             self._id = str(uuid4())
         return self._id
 
@@ -86,13 +86,14 @@ class Pipeline:
         else:
             raise AioFlowRuntimeError("Bad value for config")
 
-    def update_config(self, dct: Dict):
+    def update_config(self, dct: Dict) -> None:
         merge_dict(self._config, dct)
 
-    async def _call_middleware(self, func, *args, **kwargs):
-        kwargs.update(self.config.get("__{}_kwargs".format(func), {}))
+    async def _call_middleware(self, func: str, *args, **kwargs) -> None:
+        kwargs.update(self.config.get(f"__{func}_kwargs", {}))
         for m in self._middleware:
-            await getattr(m, func)(*args, **kwargs)
+            if m.hooks is None or any(isinstance(args[0], inst) for inst in m.hooks):
+                await getattr(m, func)(*args, **kwargs)
 
     async def message(self, **kwargs) -> None:
         """
@@ -103,7 +104,7 @@ class Pipeline:
         """
         return await self._call_middleware("pipeline_message", self, **kwargs)
 
-    async def register(self, service_cls: Type[Service], *, depends_on: Dict = None):
+    async def register(self, service_cls: Type[Service], *, depends_on: Dict = None) -> "Pipeline":
         """
         Register new service in pipeline
 
@@ -157,7 +158,7 @@ class Pipeline:
         self._depends_on[service.id] = transformed_depends_on
 
     @property
-    def services(self):
+    def services(self) -> Iterable[Service]:
         return self._services.values()
 
     def ready_services(self) -> Iterator[List]:
@@ -208,7 +209,7 @@ class Pipeline:
 
         return kwargs
 
-    async def service_wrapper(self, service_id: int, service_number):
+    async def service_wrapper(self, service_id: int, service_number: int) -> Any:
         service = self._services[service_id]
         kwargs = self.build_service_kwargs(service, service_number)
 
@@ -237,7 +238,7 @@ class Pipeline:
             await self._call_middleware("service_done", service)
             return result
 
-    async def run(self):
+    async def run(self) -> None:
         await self._call_middleware("pipeline_start", self)
 
         for services in self.ready_services():
